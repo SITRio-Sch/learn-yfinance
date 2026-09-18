@@ -102,6 +102,23 @@ h1, h2, h3, h4, h5, h6,
     word-break: break-all;
 }
 
+/* Keep Streamlit's native help tooltips inside the viewport on narrow screens. */
+[role="tooltip"] {
+    max-width: calc(100vw - 2rem) !important;
+    box-sizing: border-box !important;
+}
+
+[role="tooltip"] [data-testid="stTooltipContent"],
+[role="tooltip"] [data-testid="stMarkdownContainer"],
+[role="tooltip"] [data-testid="stMarkdownContainer"] p {
+    width: auto !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+}
+
 /* --------------------------------------------------------------------------
    4. Touch Targets & Accessibility
    -------------------------------------------------------------------------- */

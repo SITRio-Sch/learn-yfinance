@@ -146,6 +146,18 @@ def test_styles_css_nested_metric_selectors_and_no_ellipsis():
     assert 'div[data-testid="stMetricValue"] > div[data-testid="stMarkdownContainer"] > p' in css
 
 
+def test_styles_css_keeps_native_help_tooltips_inside_narrow_viewports():
+    """Verify native Streamlit help tooltips are constrained and can wrap."""
+    css_path = Path(__file__).parent.parent / "src" / "yf_learner" / "ui" / "styles.css"
+    css = css_path.read_text(encoding="utf-8")
+
+    assert '[role="tooltip"]' in css
+    assert "max-width: calc(100vw - 2rem) !important" in css
+    assert '[data-testid="stTooltipContent"]' in css
+    assert "overflow-wrap: anywhere !important" in css
+    assert "word-break: break-word !important" in css
+
+
 def _parse_css_rule_blocks(css_text: str) -> dict[str, dict[str, str]]:
     """Parse CSS text into normalized selector to declarations mapping."""
     import re
@@ -242,4 +254,3 @@ def test_styles_css_metric_anti_ellipsis_exact_selectors_regression():
     '''
     with pytest.raises(AssertionError, match="missing"):
         _assert_metric_anti_ellipsis_selectors(only_parent_css)
-
