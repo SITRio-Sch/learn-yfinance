@@ -459,6 +459,9 @@ def render_analyst_tab(symbol: str) -> None:
         st.info(f"No {dataset_options[dataset].lower()} available for this ticker.")
         return
 
+    dataset_label = dataset_options[dataset]
+    st.markdown(f"#### {dataset_label}", help=get_help(dataset_label))
+
     if analyst.targets is not None:
         t = analyst.targets
         targets_metrics = [
