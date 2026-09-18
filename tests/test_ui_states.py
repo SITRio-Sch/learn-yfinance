@@ -117,3 +117,40 @@ def test_refresh_failure_removes_old_data():
     # Now error is displayed, and previous successful metric cards are not rendered
     assert any("limiting requests right now" in err.value for err in at.error)
     assert len(at.metric) == 0
+
+
+def test_missing_fundamentals_values_render_as_not_available():
+    """Verify missing, NaN, or None fundamentals values render as 'Not available'."""
+    fake = FakeMarketDataProvider()
+    service = MarketDataService(fake, gate=RequestGate(min_interval_seconds=0.0, sleep_func=lambda s: None))
+    set_service_override(service)
+
+    from datetime import datetime, timezone
+    from yf_learner.providers.raw_models import RawFundamentalsData
+
+    # Inject missing/NaN values while keeping basic name
+    fake.fundamentals = lambda symbol: RawFundamentalsData(
+        symbol=symbol,
+        info={
+            "shortName": "Partial Fundamentals Inc",
+            "marketCap": 1000000,
+            "trailingPE": float("nan"),
+            "forwardPE": None,
+            "dividendYield": None,
+            "priceToBook": "nan",
+        },
+        retrieved_at=datetime.now(timezone.utc),
+    )
+
+    at = AppTest.from_file(APP_PATH, default_timeout=10).run()
+    at.text_input(key="search_query_input").input("AAPL").run()
+    at.button(key="FormSubmitter:search_form-Search").click().run()
+    at.button(key="open_ticker_btn").click().run()
+
+    at.session_state["learning_tab"] = "Fundamentals"
+    at.run()
+
+    metric_values = [m.value for m in at.metric]
+    assert "Not available" in metric_values
+    assert "nan" not in [str(v).lower() for v in metric_values]
+    assert "none" not in [str(v).lower() for v in metric_values]

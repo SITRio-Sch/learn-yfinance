@@ -16,6 +16,7 @@ from yf_learner.providers.raw_models import (
     RawTable,
 )
 from yf_learner.services.normalizers import (
+    FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION,
     clean_datetime,
     clean_float,
     clean_int,
@@ -28,6 +29,7 @@ from yf_learner.services.normalizers import (
     normalize_search,
     normalize_statement,
 )
+from yf_learner.ui.components import NOT_AVAILABLE, format_percent
 
 
 def test_clean_primitives():
@@ -153,6 +155,7 @@ def test_normalize_fundamentals_clean():
             "shortName": "Test Corp",
             "marketCap": 1000000000,
             "trailingPE": float("nan"),
+            "dividendYield": 0.55,
             "longBusinessSummary": "A test company description.",
         },
         retrieved_at=retrieved_at,
@@ -161,7 +164,113 @@ def test_normalize_fundamentals_clean():
     assert res.name == "Test Corp"
     assert res.market_cap == 1000000000.0
     assert res.trailing_pe is None
+    assert res.dividend_yield == 0.0055
     assert res.business_summary == "A test company description."
+
+
+def test_normalize_fundamentals_dividend_yield_percentage_points_to_ratio():
+    retrieved_at = datetime.now(timezone.utc)
+
+    # Apple-like 0.32 percentage points -> 0.0032 fractional ratio
+    raw_apple = RawFundamentalsData(
+        symbol="AAPL",
+        info={"dividendYield": 0.32},
+        retrieved_at=retrieved_at,
+    )
+    res_apple = normalize_fundamentals(raw_apple)
+    assert res_apple.dividend_yield == 0.0032
+
+    # High-yield stock 2.5 percentage points -> 0.025 fractional ratio
+    raw_high = RawFundamentalsData(
+        symbol="DIV",
+        info={"dividendYield": 2.5},
+        retrieved_at=retrieved_at,
+    )
+    res_high = normalize_fundamentals(raw_high)
+    assert res_high.dividend_yield == 0.025
+
+    # Zero dividend yield
+    raw_zero = RawFundamentalsData(
+        symbol="ZERO",
+        info={"dividendYield": 0.0},
+        retrieved_at=retrieved_at,
+    )
+    res_zero = normalize_fundamentals(raw_zero)
+    assert res_zero.dividend_yield == 0.0
+
+
+def test_normalize_fundamentals_dividend_yield_missing_and_malformed():
+    retrieved_at = datetime.now(timezone.utc)
+    for invalid_val in [None, float("nan"), "nan", "NaN", "None", "null", "undefined", "invalid"]:
+        raw = RawFundamentalsData(
+            symbol="NONE",
+            info={"dividendYield": invalid_val},
+            retrieved_at=retrieved_at,
+        )
+        res = normalize_fundamentals(raw)
+        assert res.dividend_yield is None, f"Expected None for raw value {invalid_val!r}"
+
+
+def test_fundamentals_normalization_schema_version_constant():
+    """Ensure normalization schema version constant is exported and positive integer."""
+    assert isinstance(FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION, int)
+    assert FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION >= 2
+
+
+def test_dividend_yield_normalizer_and_format_percent_end_to_end():
+    """Verify dividendYield normalization to canonical ratio and format_percent end-to-end."""
+    retrieved_at = datetime.now(timezone.utc)
+
+    # Required regression cases: raw 0.32 -> 0.0032 -> "0.32%", along with 0.55, 2.5, 0.0, None, NaN, malformed
+    cases = [
+        (0.32, 0.0032, "0.32%"),
+        (0.55, 0.0055, "0.55%"),
+        (2.5, 0.025, "2.50%"),
+        (0.0, 0.0, "0.00%"),
+        (None, None, NOT_AVAILABLE),
+        (float("nan"), None, NOT_AVAILABLE),
+        ("NaN", None, NOT_AVAILABLE),
+        ("nan", None, NOT_AVAILABLE),
+        ("None", None, NOT_AVAILABLE),
+        ("null", None, NOT_AVAILABLE),
+        ("invalid", None, NOT_AVAILABLE),
+    ]
+
+    for raw_val, expected_ratio, expected_display in cases:
+        raw = RawFundamentalsData(
+            symbol="TEST",
+            info={"dividendYield": raw_val},
+            retrieved_at=retrieved_at,
+        )
+        res = normalize_fundamentals(raw)
+        assert res.dividend_yield == expected_ratio, (
+            f"Expected canonical ratio {expected_ratio} for raw {raw_val!r}, got {res.dividend_yield}"
+        )
+        formatted = format_percent(res.dividend_yield)
+        assert formatted == expected_display, (
+            f"Expected formatted string {expected_display!r} for raw {raw_val!r}, got {formatted!r}"
+        )
+
+
+def test_normalize_statement_long_metric_identifiers():
+    retrieved_at = datetime.now(timezone.utc)
+    raw = RawStatementData(
+        symbol="LONG",
+        statement="Income statement",
+        frequency="yearly",
+        table=RawTable(
+            columns=("2025-09-30", "2024-09-30"),
+            index=(
+                "NetIncomeFromContinuingOperationNetMinorityInterest",
+                "OperatingIncomeContinuousOperations",
+            ),
+            data=((100000, 95000), (120000, 110000)),
+        ),
+        retrieved_at=retrieved_at,
+    )
+    res = normalize_statement(raw)
+    assert "NetIncomeFromContinuingOperationNetMinorityInterest" in res.table.index
+    assert res.table.rows[0] == (100000.0, 95000.0)
 
 
 def test_normalize_statement():

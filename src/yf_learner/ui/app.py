@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from yf_learner.domain.models import SearchResultItem
@@ -16,6 +18,7 @@ from yf_learner.ui.components import (
     render_quote_tab,
     render_statements_tab,
 )
+from yf_learner.ui.layout import render_controls_row
 
 TAB_NAMES = [
     "Quote",
@@ -54,6 +57,14 @@ def is_tab_active(tab: st.delta_generator.DeltaGenerator, tab_name: str) -> bool
     return st.session_state.get("learning_tab") == tab_name
 
 
+def load_stylesheet() -> None:
+    """Load scoped CSS stylesheet once immediately after page config."""
+    css_path = Path(__file__).resolve().parent / "styles.css"
+    if css_path.exists():
+        css_content = css_path.read_text(encoding="utf-8")
+        st.html(f"<style>\n{css_content}\n</style>")
+
+
 def render_app() -> None:
     """Render the primary Streamlit application."""
     st.set_page_config(
@@ -62,6 +73,7 @@ def render_app() -> None:
         layout="wide",
         initial_sidebar_state="collapsed",
     )
+    load_stylesheet()
 
     init_session_state()
 
@@ -108,15 +120,14 @@ def render_app() -> None:
                 return f"{item.symbol} — {name} ({exchange}, {quote_type})"
 
             selected_item = st.radio(
-                "Select a ticker:",
+                "Select a ticker from search results:",
                 options=results,
                 format_func=format_search_item,
                 key="search_results_radio",
-                label_visibility="collapsed",
+                label_visibility="visible",
             )
 
-            col_open, _ = st.columns([2, 8])
-            with col_open:
+            with render_controls_row():
                 if st.button("Open ticker", key="open_ticker_btn", type="primary"):
                     if selected_item:
                         st.session_state["active_symbol"] = selected_item.symbol

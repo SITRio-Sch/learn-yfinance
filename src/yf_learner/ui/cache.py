@@ -15,6 +15,7 @@ from yf_learner.domain.models import (
     StatementResult,
 )
 from yf_learner.services.market_data import MarketDataService
+from yf_learner.services.normalizers import FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION
 
 _GLOBAL_SERVICE_OVERRIDE: MarketDataService | None = None
 
@@ -72,9 +73,22 @@ def cached_history(
 
 
 @st.cache_data(ttl=1800, scope="session", show_spinner=False)
-def cached_fundamentals(symbol: str, token: int = 0) -> DataResult[FundamentalsResult]:
-    """Cache fundamentals for 1800 seconds."""
+def _cached_fundamentals_versioned(
+    symbol: str,
+    normalization_schema_version: int,
+    token: int = 0,
+) -> DataResult[FundamentalsResult]:
+    """Internal session-scoped cache for fundamentals, keyed by symbol, schema version, and token."""
     return get_service().fundamentals(symbol)
+
+
+def cached_fundamentals(symbol: str, token: int = 0) -> DataResult[FundamentalsResult]:
+    """Cache fundamentals for 1800 seconds with versioned schema cache key."""
+    return _cached_fundamentals_versioned(
+        symbol=symbol,
+        normalization_schema_version=FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION,
+        token=token,
+    )
 
 
 @st.cache_data(ttl=3600, scope="session", show_spinner=False)

@@ -134,3 +134,63 @@ def test_each_tab_includes_teaching_snippet_refresh_provenance():
     assert at.button(key="btn_refresh_news") is not None
     assert any("What yfinance is doing" in exp.label for exp in at.expander)
     assert any("Source: `Yahoo Finance via yfinance`" in m.value for m in at.markdown)
+
+
+def test_fundamentals_tab_dividend_yield_display():
+    """Verify Fundamentals tab displays correct percentage (0.55% from raw 0.55)."""
+    at, fake = _setup_open_ticker_app()
+    at.session_state["learning_tab"] = "Fundamentals"
+    at.run()
+
+    metric_pairs = [(m.label, m.value) for m in at.metric]
+    div_yield_metric = next((v for l, v in metric_pairs if l == "Dividend Yield"), None)
+    assert div_yield_metric == "0.55%", f"Expected '0.55%', got {div_yield_metric!r}"
+
+
+def test_fundamentals_tab_dividend_yield_aapl_032():
+    """Verify Fundamentals tab displays 0.32% when raw dividendYield is 0.32 (e.g. AAPL)."""
+    from datetime import datetime, timezone
+    from yf_learner.providers.raw_models import RawFundamentalsData
+    at, fake = _setup_open_ticker_app()
+    fake.fundamentals = lambda sym: RawFundamentalsData(
+        symbol=sym,
+        info={
+            "shortName": "Apple Inc.",
+            "dividendYield": 0.32,
+            "marketCap": 3000000000000,
+            "sector": "Technology",
+        },
+        retrieved_at=datetime.now(timezone.utc),
+    )
+    at.session_state["learning_tab"] = "Fundamentals"
+    at.session_state["refresh_fundamentals"] = 1
+    at.run()
+
+    metric_pairs = [(m.label, m.value) for m in at.metric]
+    div_yield_metric = next((v for l, v in metric_pairs if l == "Dividend Yield"), None)
+    assert div_yield_metric == "0.32%", f"Expected '0.32%', got {div_yield_metric!r}"
+
+
+def test_statements_tab_renders_columns_and_data():
+    """Verify Financial Statements tab renders dataframe with Metric column."""
+    at, fake = _setup_open_ticker_app()
+    at.session_state["learning_tab"] = "Financial Statements"
+    at.run()
+
+    assert len(at.dataframe) == 1
+    # Check that selector controls exist
+    assert at.selectbox(key="stmt_type_sel") is not None
+    assert at.selectbox(key="stmt_freq_sel") is not None
+    assert at.button(key="btn_refresh_statements") is not None
+
+
+def test_provenance_rendering_stacked():
+    """Verify provenance rendered in Quote tab includes stacked bullet metadata."""
+    at, fake = _setup_open_ticker_app()
+    md_values = [m.value for m in at.markdown]
+    prov_md = next((m for m in md_values if "Provenance:" in m), None)
+    assert prov_md is not None
+    assert "- Source: `Yahoo Finance via yfinance`" in prov_md
+    assert "- Retrieved:" in prov_md
+    assert "- Data as of:" in prov_md
+    assert "Data Limitations:" in prov_md

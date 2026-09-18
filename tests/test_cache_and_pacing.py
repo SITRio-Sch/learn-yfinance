@@ -100,3 +100,133 @@ def test_caching_and_refresh_token_behavior():
     # Error message must be rendered, and prior success value is removed
     assert any("limiting requests right now" in err.value for err in at.error)
     assert not any("price=" in m.value for m in at.markdown)
+
+
+def test_cached_fundamentals_schema_version_key():
+    """Verify that fundamentals cache function includes non-underscore schema version in its signature."""
+    import inspect
+    from yf_learner.services.normalizers import FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION
+    from yf_learner.ui.cache import _cached_fundamentals_versioned, cached_fundamentals
+
+    # Verify constant is defined
+    assert isinstance(FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION, int)
+
+    # Inspect _cached_fundamentals_versioned parameters
+    sig = inspect.signature(_cached_fundamentals_versioned)
+    assert "normalization_schema_version" in sig.parameters
+    # Streamlit cache keys exclude parameters with leading underscores; ensure none have leading underscores
+    for param_name in sig.parameters:
+        assert not param_name.startswith("_"), f"Parameter {param_name} starts with underscore and would be excluded from cache key"
+
+    # Verify public cached_fundamentals signature remains (symbol, token=0)
+    public_sig = inspect.signature(cached_fundamentals)
+    assert "symbol" in public_sig.parameters
+    assert "token" in public_sig.parameters
+    assert public_sig.parameters["token"].default == 0
+
+
+def test_cached_fundamentals_versioning_and_invalidation():
+    """Verify that fundamentals caching uses schema version and refresh token in cache keys."""
+    fake = FakeMarketDataProvider()
+    fast_gate = RequestGate(min_interval_seconds=0.0, sleep_func=lambda s: None)
+    service = MarketDataService(fake, gate=fast_gate)
+    set_service_override(service)
+
+    def fundamentals_runner():
+        import streamlit as st
+        from yf_learner.ui.cache import _cached_fundamentals_versioned, cached_fundamentals
+
+        tok = st.session_state.get("refresh_token", 0)
+        custom_version = st.session_state.get("schema_version", None)
+
+        if custom_version is not None:
+            res = _cached_fundamentals_versioned("AAPL", normalization_schema_version=custom_version, token=tok)
+        else:
+            res = cached_fundamentals("AAPL", token=tok)
+
+        if res.is_success and res.value:
+            st.write(f"symbol={res.value.symbol}")
+
+    at = AppTest.from_function(fundamentals_runner).run()
+
+    # 1. First fetch with cached_fundamentals
+    assert fake.call_counts["fundamentals"] == 1
+
+    # 2. Identical request with cached_fundamentals must be retrieved from cache
+    at.run()
+    assert fake.call_counts["fundamentals"] == 1
+
+    # 3. Refresh token increment triggers new fetch
+    at.session_state["refresh_token"] = 1
+    at.run()
+    assert fake.call_counts["fundamentals"] == 2
+
+    # 4. Modifying schema version changes cache key and triggers new fetch
+    at.session_state["schema_version"] = 9999
+    at.run()
+    assert fake.call_counts["fundamentals"] == 3
+
+
+def test_cached_fundamentals_dividend_yield_end_to_end():
+    """Verify that cached_fundamentals converts fake info dividendYield to canonical ratio and format_percent formats correctly."""
+    from datetime import datetime, timezone
+    from yf_learner.providers.raw_models import RawFundamentalsData
+    from yf_learner.ui.components import NOT_AVAILABLE, format_percent
+
+    cases = [
+        (0.32, 0.0032, "0.32%"),
+        (0.55, 0.0055, "0.55%"),
+        (2.5, 0.025, "2.50%"),
+        (0.0, 0.0, "0.00%"),
+        (None, None, NOT_AVAILABLE),
+        (float("nan"), None, NOT_AVAILABLE),
+        ("NaN", None, NOT_AVAILABLE),
+        ("nan", None, NOT_AVAILABLE),
+        ("None", None, NOT_AVAILABLE),
+        ("null", None, NOT_AVAILABLE),
+        ("invalid", None, NOT_AVAILABLE),
+    ]
+
+    for i, (raw_val, expected_ratio, expected_display) in enumerate(cases):
+        fake = FakeMarketDataProvider()
+        fake.fundamentals = lambda sym, rv=raw_val: RawFundamentalsData(
+            symbol=sym,
+            info={
+                "shortName": "Test Co",
+                "quoteType": "EQUITY",
+                "dividendYield": rv,
+                "marketCap": 1000000,
+                "sector": "Tech",
+            },
+            retrieved_at=datetime.now(timezone.utc),
+        )
+        service = MarketDataService(fake, gate=RequestGate(min_interval_seconds=0.0, sleep_func=lambda s: None))
+        set_service_override(service)
+
+        sym = f"TST{i}"
+
+        def runner():
+            import streamlit as st
+            from yf_learner.ui.cache import cached_fundamentals
+            from yf_learner.ui.components import format_percent
+
+            target_sym = st.session_state.get("target_sym", "AAPL")
+            res = cached_fundamentals(target_sym, token=0)
+            st.session_state["res"] = res
+            if res.is_success and res.value:
+                st.session_state["div_yield"] = res.value.dividend_yield
+                st.session_state["formatted"] = format_percent(res.value.dividend_yield)
+
+        at = AppTest.from_function(runner)
+        at.session_state["target_sym"] = sym
+        at.run()
+        res = at.session_state["res"]
+        assert res.is_success, f"Failed for raw dividendYield {raw_val!r}: {res.problem}"
+        assert res.value is not None
+        assert res.value.dividend_yield == expected_ratio, (
+            f"Expected canonical ratio {expected_ratio} for raw {raw_val!r}, got {res.value.dividend_yield}"
+        )
+        assert format_percent(res.value.dividend_yield) == expected_display, (
+            f"Expected display string {expected_display!r} for raw {raw_val!r}, got {format_percent(res.value.dividend_yield)!r}"
+        )
+        assert at.session_state.get("formatted") == expected_display

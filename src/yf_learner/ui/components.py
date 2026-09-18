@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import streamlit as st
@@ -16,6 +17,7 @@ from yf_learner.domain.models import (
     StatementResult,
     TableData,
 )
+from yf_learner.services.normalizers import clean_datetime
 from yf_learner.ui.cache import (
     cached_analyst,
     cached_fundamentals,
@@ -23,6 +25,15 @@ from yf_learner.ui.cache import (
     cached_news,
     cached_quote,
     cached_statement,
+)
+from yf_learner.ui.layout import (
+    build_analyst_table_column_config,
+    build_history_column_config,
+    build_statement_column_config,
+    render_controls_row,
+    render_dataframe,
+    render_metric_grid,
+    render_profile_grid,
 )
 from yf_learner.ui.teaching import (
     CODE_SNIPPETS,
@@ -44,6 +55,8 @@ def format_val(
     if val is None:
         return NOT_AVAILABLE
     if isinstance(val, (int, float)):
+        if math.isnan(val) or math.isinf(val):
+            return NOT_AVAILABLE
         if format_large and abs(val) >= 1_000_000:
             if abs(val) >= 1_000_000_000_000:
                 return f"{prefix}{val / 1_000_000_000_000:.2f}T{suffix}"
@@ -61,6 +74,26 @@ def format_val(
     if not s or s.lower() in ("nan", "none", "null", "nat"):
         return NOT_AVAILABLE
     return f"{prefix}{s}{suffix}"
+
+
+def format_percent(val: float | None, decimals: int = 2) -> str:
+    """Format a canonical fractional ratio (e.g. 0.0032 -> 0.32%) as percentage."""
+    if val is None:
+        return NOT_AVAILABLE
+    if isinstance(val, (int, float)):
+        if math.isnan(val) or math.isinf(val):
+            return NOT_AVAILABLE
+        return f"{val * 100:.{decimals}f}%"
+    s = str(val).strip()
+    if not s or s.lower() in ("nan", "none", "null", "nat"):
+        return NOT_AVAILABLE
+    try:
+        f = float(s)
+        if math.isnan(f) or math.isinf(f):
+            return NOT_AVAILABLE
+        return f"{f * 100:.{decimals}f}%"
+    except (ValueError, TypeError):
+        return NOT_AVAILABLE
 
 
 def render_problem(problem: DataProblem) -> None:
@@ -91,8 +124,7 @@ def render_quote_tab(symbol: str) -> None:
     st.subheader("Quote Snapshot")
     st.markdown(TEACHING_COPY["quote"])
 
-    col_btn, _ = st.columns([2, 8])
-    with col_btn:
+    with render_controls_row():
         if st.button("Refresh quote", key="btn_refresh_quote"):
             st.session_state["refresh_quote"] = st.session_state.get("refresh_quote", 0) + 1
 
@@ -110,27 +142,29 @@ def render_quote_tab(symbol: str) -> None:
         st.warning("No quote data available for this ticker.")
         return
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Last Price", format_val(snapshot.last_price, prefix="$", decimals=2))
-        st.metric("Open", format_val(snapshot.open_price, prefix="$", decimals=2))
-        st.metric("Currency", format_val(snapshot.currency))
-    with col2:
-        st.metric("Previous Close", format_val(snapshot.previous_close, prefix="$", decimals=2))
-        day_h = format_val(snapshot.day_high, prefix="$", decimals=2)
-        day_l = format_val(snapshot.day_low, prefix="$", decimals=2)
-        st.metric("Day High / Low", f"{day_h} / {day_l}")
-        st.metric("Exchange", format_val(snapshot.exchange))
-    with col3:
-        w_h = format_val(snapshot.fifty_two_week_high, prefix="$", decimals=2)
-        w_l = format_val(snapshot.fifty_two_week_low, prefix="$", decimals=2)
-        st.metric("52-Week Range", f"{w_l} - {w_h}")
-        st.metric("Volume", format_val(snapshot.volume))
-        st.metric("Timezone", format_val(snapshot.timezone))
-    with col4:
-        st.metric("Avg Volume (3M)", format_val(snapshot.average_volume))
-        st.metric("Avg Volume (10D)", format_val(snapshot.average_volume_10d))
-        st.metric("Market Cap", format_val(snapshot.market_cap, prefix="$", format_large=True))
+    day_h = format_val(snapshot.day_high, prefix="$", decimals=2)
+    day_l = format_val(snapshot.day_low, prefix="$", decimals=2)
+    day_range = f"{day_h} / {day_l}" if (day_h != NOT_AVAILABLE or day_l != NOT_AVAILABLE) else NOT_AVAILABLE
+
+    w_h = format_val(snapshot.fifty_two_week_high, prefix="$", decimals=2)
+    w_l = format_val(snapshot.fifty_two_week_low, prefix="$", decimals=2)
+    range_52w = f"{w_l} - {w_h}" if (w_l != NOT_AVAILABLE or w_h != NOT_AVAILABLE) else NOT_AVAILABLE
+
+    metrics = [
+        ("Last Price", format_val(snapshot.last_price, prefix="$", decimals=2)),
+        ("Previous Close", format_val(snapshot.previous_close, prefix="$", decimals=2)),
+        ("Open", format_val(snapshot.open_price, prefix="$", decimals=2)),
+        ("Day High / Low", day_range),
+        ("52-Week Range", range_52w),
+        ("Volume", format_val(snapshot.volume)),
+        ("Avg Volume (3M)", format_val(snapshot.average_volume)),
+        ("Avg Volume (10D)", format_val(snapshot.average_volume_10d)),
+        ("Market Cap", format_val(snapshot.market_cap, prefix="$", format_large=True)),
+        ("Currency", format_val(snapshot.currency)),
+        ("Exchange", format_val(snapshot.exchange)),
+        ("Timezone", format_val(snapshot.timezone)),
+    ]
+    render_metric_grid(metrics, max_columns=4)
 
     with st.expander("What yfinance is doing"):
         st.code(CODE_SNIPPETS["quote"].format(symbol=symbol), language="python")
@@ -143,34 +177,29 @@ def render_history_tab(symbol: str) -> None:
     st.subheader("Historical Prices & Volume")
     st.markdown(TEACHING_COPY["history"])
 
-    c1, c2, c3, c4, c5 = st.columns([2, 2, 3, 3, 2])
-    with c1:
+    with render_controls_row():
         period = st.selectbox(
             "Period",
             ["1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"],
             index=0,
             key="history_period_sel",
         )
-    with c2:
         interval = st.selectbox(
             "Interval",
             ["1d", "1wk", "1mo"],
             index=0,
             key="history_interval_sel",
         )
-    with c3:
         auto_adjust = st.checkbox(
             "Auto-adjust prices",
             value=True,
             key="history_auto_adj_cb",
         )
-    with c4:
         actions = st.checkbox(
             "Include corporate actions",
             value=False,
             key="history_actions_cb",
         )
-    with c5:
         if st.button("Refresh history", key="btn_refresh_history"):
             st.session_state["refresh_history"] = st.session_state.get("refresh_history", 0) + 1
 
@@ -195,19 +224,16 @@ def render_history_tab(symbol: str) -> None:
         st.info("No historical price records returned for this configuration.")
         return
 
-    # Render summary metric
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("Total Records", len(hist.points))
-    with m2:
-        st.metric("Start Date", hist.points[0].date_or_time or NOT_AVAILABLE)
-    with m3:
-        st.metric("End Date", hist.points[-1].date_or_time or NOT_AVAILABLE)
-    with m4:
-        latest_close = format_val(hist.points[-1].close, prefix="$", decimals=2)
-        st.metric("Latest Close", latest_close)
+    latest_close = format_val(hist.points[-1].close, prefix="$", decimals=2)
+    summary_metrics = [
+        ("Total Records", str(len(hist.points))),
+        ("Start Date", hist.points[0].date_or_time or NOT_AVAILABLE),
+        ("End Date", hist.points[-1].date_or_time or NOT_AVAILABLE),
+        ("Latest Close", latest_close),
+    ]
+    render_metric_grid(summary_metrics, max_columns=4)
 
-    # Format table records
+    # Format table records & chart series
     table_rows = []
     chart_dates = []
     chart_closes = []
@@ -227,15 +253,24 @@ def render_history_tab(symbol: str) -> None:
             row["Stock Splits"] = format_val(p.stock_splits)
         table_rows.append(row)
 
-    # Render line chart of closing prices
+    # Render line chart of closing prices with parsed dates for temporal axis
     if any(c is not None for c in chart_closes):
+        parsed_dates = []
+        for d in chart_dates:
+            try:
+                dt = clean_datetime(d)
+                parsed_dates.append(dt if dt is not None else d)
+            except Exception:
+                parsed_dates.append(d)
+
         chart_data = {
-            "Date": chart_dates,
+            "Date": parsed_dates,
             "Close": chart_closes,
         }
-        st.line_chart(chart_data, x="Date", y="Close")
+        st.line_chart(chart_data, x="Date", y="Close", height=350)
 
-    st.dataframe(table_rows, width="stretch")
+    col_config = build_history_column_config(actions=actions)
+    render_dataframe(table_rows, column_config=col_config)
 
     with st.expander("What yfinance is doing"):
         snippet = CODE_SNIPPETS["history"].format(
@@ -255,8 +290,7 @@ def render_fundamentals_tab(symbol: str) -> None:
     st.subheader("Company Fundamentals")
     st.markdown(TEACHING_COPY["fundamentals"])
 
-    col_btn, _ = st.columns([2, 8])
-    with col_btn:
+    with render_controls_row():
         if st.button("Refresh fundamentals", key="btn_refresh_fundamentals"):
             st.session_state["refresh_fundamentals"] = st.session_state.get("refresh_fundamentals", 0) + 1
 
@@ -275,38 +309,36 @@ def render_fundamentals_tab(symbol: str) -> None:
         return
 
     st.markdown("#### Profile & Classification")
-    p1, p2, p3 = st.columns(3)
-    with p1:
-        st.markdown(f"**Company Name:** {format_val(fund.name)}")
-        st.markdown(f"**Quote Type:** {format_val(fund.quote_type)}")
-        st.markdown(f"**Exchange:** {format_val(fund.exchange)}")
-    with p2:
-        st.markdown(f"**Sector:** {format_val(fund.sector)}")
-        st.markdown(f"**Industry:** {format_val(fund.industry)}")
-        st.markdown(f"**Country:** {format_val(fund.country)}")
-    with p3:
-        st.markdown(f"**Currency:** {format_val(fund.currency)}")
-        st.markdown(f"**Employees:** {format_val(fund.employees)}")
-        st.markdown(f"**Website:** {format_val(fund.website)}")
+    website_val = fund.website
+    if website_val and website_val.startswith(("http://", "https://")):
+        website_disp = f"[{website_val}]({website_val})"
+    else:
+        website_disp = format_val(website_val)
+
+    profile_items = [
+        ("Company Name", format_val(fund.name)),
+        ("Quote Type", format_val(fund.quote_type)),
+        ("Exchange", format_val(fund.exchange)),
+        ("Sector", format_val(fund.sector)),
+        ("Industry", format_val(fund.industry)),
+        ("Country", format_val(fund.country)),
+        ("Currency", format_val(fund.currency)),
+        ("Employees", format_val(fund.employees)),
+        ("Website", website_disp),
+    ]
+    render_profile_grid(profile_items, columns=3)
 
     st.markdown("#### Valuation & Financial Ratios")
-    v1, v2, v3, v4 = st.columns(4)
-    with v1:
-        st.metric("Market Cap", format_val(fund.market_cap, prefix="$", format_large=True))
-        st.metric("Enterprise Value", format_val(fund.enterprise_value, prefix="$", format_large=True))
-    with v2:
-        st.metric("Trailing P/E", format_val(fund.trailing_pe, decimals=2))
-        st.metric("Forward P/E", format_val(fund.forward_pe, decimals=2))
-    with v3:
-        st.metric("Price / Book", format_val(fund.price_to_book, decimals=2))
-        div_str = (
-            f"{fund.dividend_yield * 100:.2f}%"
-            if fund.dividend_yield is not None
-            else NOT_AVAILABLE
-        )
-        st.metric("Dividend Yield", div_str)
-    with v4:
-        st.metric("Beta (Volatility)", format_val(fund.beta, decimals=2))
+    val_metrics = [
+        ("Market Cap", format_val(fund.market_cap, prefix="$", format_large=True)),
+        ("Enterprise Value", format_val(fund.enterprise_value, prefix="$", format_large=True)),
+        ("Trailing P/E", format_val(fund.trailing_pe, decimals=2)),
+        ("Forward P/E", format_val(fund.forward_pe, decimals=2)),
+        ("Price / Book", format_val(fund.price_to_book, decimals=2)),
+        ("Dividend Yield", format_percent(fund.dividend_yield)),
+        ("Beta (Volatility)", format_val(fund.beta, decimals=2)),
+    ]
+    render_metric_grid(val_metrics, max_columns=4)
 
     if fund.business_summary:
         st.markdown("#### Business Summary")
@@ -323,21 +355,18 @@ def render_statements_tab(symbol: str) -> None:
     st.subheader("Financial Statements")
     st.markdown(TEACHING_COPY["statements"])
 
-    c1, c2, c3 = st.columns([3, 3, 2])
-    with c1:
+    with render_controls_row():
         statement = st.selectbox(
             "Statement",
             ["Income statement", "Balance sheet", "Cash flow"],
             key="stmt_type_sel",
         )
-    with c2:
         freq_label = st.selectbox(
             "Frequency",
             ["Annual", "Quarterly"],
             key="stmt_freq_sel",
         )
         frequency = "yearly" if freq_label == "Annual" else "quarterly"
-    with c3:
         if st.button("Refresh financial statements", key="btn_refresh_statements"):
             st.session_state["refresh_statements"] = st.session_state.get("refresh_statements", 0) + 1
 
@@ -365,7 +394,8 @@ def render_statements_tab(symbol: str) -> None:
             row_dict[col_name] = format_val(val, format_large=True)
         display_data.append(row_dict)
 
-    st.dataframe(display_data, width="stretch")
+    col_config = build_statement_column_config(stmt.table.columns, metric_column_name="Metric")
+    render_dataframe(display_data, column_config=col_config)
 
     with st.expander("What yfinance is doing"):
         method_map = {
@@ -396,15 +426,13 @@ def render_analyst_tab(symbol: str) -> None:
         "growth_estimates": "Growth Estimates",
     }
 
-    c1, c2 = st.columns([4, 2])
-    with c1:
+    with render_controls_row():
         dataset = st.selectbox(
             "Dataset",
             list(dataset_options.keys()),
             format_func=lambda k: dataset_options[k],
             key="analyst_dataset_sel",
         )
-    with c2:
         if st.button("Refresh analyst data", key="btn_refresh_analyst"):
             st.session_state["refresh_analyst"] = st.session_state.get("refresh_analyst", 0) + 1
 
@@ -423,19 +451,15 @@ def render_analyst_tab(symbol: str) -> None:
         return
 
     if analyst.targets is not None:
-        # Render price targets cards
         t = analyst.targets
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            st.metric("Current", format_val(t.current, prefix="$", decimals=2))
-        with c2:
-            st.metric("Low Target", format_val(t.low, prefix="$", decimals=2))
-        with c3:
-            st.metric("Mean Target", format_val(t.mean, prefix="$", decimals=2))
-        with c4:
-            st.metric("Median Target", format_val(t.median, prefix="$", decimals=2))
-        with c5:
-            st.metric("High Target", format_val(t.high, prefix="$", decimals=2))
+        targets_metrics = [
+            ("Current", format_val(t.current, prefix="$", decimals=2)),
+            ("Low Target", format_val(t.low, prefix="$", decimals=2)),
+            ("Mean Target", format_val(t.mean, prefix="$", decimals=2)),
+            ("Median Target", format_val(t.median, prefix="$", decimals=2)),
+            ("High Target", format_val(t.high, prefix="$", decimals=2)),
+        ]
+        render_metric_grid(targets_metrics, max_columns=5)
     elif analyst.table is not None and analyst.table.columns:
         display_data = []
         for r_idx, idx_name in enumerate(analyst.table.index):
@@ -445,7 +469,8 @@ def render_analyst_tab(symbol: str) -> None:
                 val = row_vals[c_idx] if c_idx < len(row_vals) else None
                 row_dict[col_name] = format_val(val)
             display_data.append(row_dict)
-        st.dataframe(display_data, width="stretch")
+        col_config = build_analyst_table_column_config(analyst.table.columns, item_column_name="Item")
+        render_dataframe(display_data, column_config=col_config)
     else:
         st.info(f"No {dataset_options[dataset].lower()} available for this ticker.")
 
@@ -471,16 +496,13 @@ def render_news_tab(symbol: str) -> None:
     st.subheader("News & Corporate Releases")
     st.markdown(TEACHING_COPY["news"])
 
-    c1, c2, c3 = st.columns([3, 3, 2])
-    with c1:
+    with render_controls_row():
         feed = st.selectbox(
             "Feed",
             ["news", "all", "press releases"],
             key="news_feed_sel",
         )
-    with c2:
         count = st.slider("Articles Count", min_value=1, max_value=20, value=8, key="news_count_slider")
-    with c3:
         if st.button("Refresh news", key="btn_refresh_news"):
             st.session_state["refresh_news"] = st.session_state.get("refresh_news", 0) + 1
 
@@ -507,13 +529,12 @@ def render_news_tab(symbol: str) -> None:
             else NOT_AVAILABLE
         )
 
-        with st.container():
+        with st.container(border=True):
             if item.link:
                 st.markdown(f"##### [{title}]({item.link})")
             else:
                 st.markdown(f"##### {title}")
-            st.caption(f"Publisher: **{publisher}** | Published: **{published}**")
-            st.divider()
+            st.caption(f"**Publisher:** {publisher} | **Published:** {published}")
 
     with st.expander("What yfinance is doing"):
         snippet = CODE_SNIPPETS["news"].format(

@@ -141,7 +141,7 @@ class FakeMarketDataProvider(MarketDataProvider):
             "trailingPE": 30.5,
             "forwardPE": 28.2,
             "priceToBook": 45.1,
-            "dividendYield": 0.0055,
+            "dividendYield": 0.55,
             "beta": 1.25,
             "longBusinessSummary": "Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories.",
         }

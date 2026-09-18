@@ -33,6 +33,7 @@ from yf_learner.providers.raw_models import (
 )
 
 SOURCE_NAME = "Yahoo Finance via yfinance"
+FUNDAMENTALS_NORMALIZATION_SCHEMA_VERSION = 2
 
 
 def clean_str(val: Any) -> str | None:
@@ -301,9 +302,16 @@ def normalize_history(raw: RawHistoryData) -> HistoryResult:
     )
 
 
-def normalize_fundamentals(raw: RawFundamentalsData) -> FundamentalsResult:
+def normalize_fundamentals(raw: RawFundamentalsData | dict[str, Any]) -> FundamentalsResult:
     """Normalize raw company info dictionary into FundamentalsResult."""
-    info = raw.info or {}
+    if isinstance(raw, dict):
+        info = raw.get("info") if isinstance(raw.get("info"), dict) else raw
+        raw_symbol = str(raw.get("symbol") or (info.get("symbol") if isinstance(info, dict) else "") or "")
+        retrieved_at = datetime.now(timezone.utc)
+    else:
+        info = raw.info or {}
+        raw_symbol = raw.symbol
+        retrieved_at = raw.retrieved_at
 
     name = clean_str(info.get("shortName") or info.get("longName"))
     quote_type = clean_str(info.get("quoteType"))
@@ -319,7 +327,10 @@ def normalize_fundamentals(raw: RawFundamentalsData) -> FundamentalsResult:
     trailing_pe = clean_float(info.get("trailingPE"))
     forward_pe = clean_float(info.get("forwardPE"))
     price_to_book = clean_float(info.get("priceToBook"))
-    dividend_yield = clean_float(info.get("dividendYield"))
+    # Yahoo quoteResponse dividendYield is percentage points (0.32 means 0.32%)
+    # and must not be unit-guessed. We divide by 100 to yield the canonical fractional ratio (0.0032).
+    raw_div_yield = clean_float(info.get("dividendYield"))
+    dividend_yield = round(raw_div_yield / 100.0, 8) if raw_div_yield is not None else None
     beta = clean_float(info.get("beta"))
     business_summary = clean_str(info.get("longBusinessSummary"))
 
@@ -334,12 +345,12 @@ def normalize_fundamentals(raw: RawFundamentalsData) -> FundamentalsResult:
 
     provenance = Provenance(
         source=SOURCE_NAME,
-        retrieved_at=raw.retrieved_at,
+        retrieved_at=retrieved_at,
         data_as_of=as_of,
     )
 
     return FundamentalsResult(
-        symbol=raw.symbol,
+        symbol=raw_symbol,
         name=name,
         quote_type=quote_type,
         exchange=exchange,

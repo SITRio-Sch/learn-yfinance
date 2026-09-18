@@ -142,7 +142,12 @@ def format_provenance_markdown(prov: Provenance | None, limitation_key: str | No
 
     lines = [
         "---",
-        f"**Provenance:** Source: `{source_str}` | Retrieved: `{retrieved_str}` | Data as of: `{as_of_str}`",
+        (
+            "**Provenance:**\n"
+            f"- Source: `{source_str}`\n"
+            f"- Retrieved: `{retrieved_str}`\n"
+            f"- Data as of: `{as_of_str}`"
+        ),
     ]
     if limitation_key and limitation_key in LIMITATIONS_NOTES:
         lines.append(f"**Data Limitations:** {LIMITATIONS_NOTES[limitation_key]}")

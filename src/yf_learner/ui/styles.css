@@ -1,0 +1,251 @@
+/* ==========================================================================
+   Learn yFinance - UI Polish & Responsive Stylesheet
+   Streamlit 1.64.0 Dark Mode Compatible
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Page Layout, Scrolling & Root Safety
+   -------------------------------------------------------------------------- */
+html,
+body,
+[data-testid="stAppViewContainer"],
+[data-testid="stApp"] {
+    overflow-x: visible !important;
+    overflow-y: auto !important;
+}
+
+/* Dataframes allow horizontal scroll internally without expanding page */
+[data-testid="stDataFrame"] {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+}
+
+/* --------------------------------------------------------------------------
+   2. Metric Value Wrapping & Card Styling
+   -------------------------------------------------------------------------- */
+[data-testid="stMetric"] {
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] > div,
+[data-testid="stMetricLabel"] label {
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    font-size: 0.85rem !important;
+}
+
+[data-testid="stMetricDelta"],
+[data-testid="stMetricDelta"] > div {
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+}
+
+/* Prevent metric values from ellipsizing or clipping on dense viewports */
+div[data-testid="stMetricValue"] {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+}
+
+div[data-testid="stMetricValue"] > div[data-testid="stMarkdownContainer"] {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+}
+
+div[data-testid="stMetricValue"] > div[data-testid="stMarkdownContainer"] > p {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. Typography, Headings, Links & Alerts Wrapping
+   -------------------------------------------------------------------------- */
+h1, h2, h3, h4, h5, h6,
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] span,
+[data-testid="stMarkdownContainer"] li,
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+}
+
+/* URLs and long links wrap anywhere to prevent mobile blowout */
+[data-testid="stMarkdownContainer"] a {
+    overflow-wrap: anywhere !important;
+    word-break: break-all;
+}
+
+/* --------------------------------------------------------------------------
+   4. Touch Targets & Accessibility
+   -------------------------------------------------------------------------- */
+/* Minimum 44px touch targets */
+button[data-testid="baseButton-secondary"],
+button[data-testid="baseButton-primary"],
+[data-testid="stButton"] > button,
+[data-testid="stFormSubmitButton"] > button {
+    min-height: 44px;
+    touch-action: manipulation;
+}
+
+[data-testid="stRadio"] [role="radiogroup"] > label {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+[data-testid="stCheckbox"] label {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+/* Preserve & highlight native keyboard focus outlines */
+:focus-visible {
+    outline: 2px solid #4da6ff !important;
+    outline-offset: 2px !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. Tabs Responsiveness (Desktop, Tablet, and Mobile 390px)
+   -------------------------------------------------------------------------- */
+[data-testid="stTabs"] [role="tablist"] {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    flex-wrap: nowrap !important;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+}
+
+[data-testid="stTabs"] [role="tab"] {
+    min-height: 44px;
+    padding: 0.5rem 1rem !important;
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* --------------------------------------------------------------------------
+   6. News Article Containers
+   -------------------------------------------------------------------------- */
+[data-testid="stVerticalBlock"] > div > [data-testid="stContainer"] {
+    border-radius: 8px;
+    transition: border-color 0.15s ease-in-out;
+}
+
+/* --------------------------------------------------------------------------
+   7. Responsive Breakpoints Contract
+   -------------------------------------------------------------------------- */
+
+/* >= 1200px: Dense desktop */
+@media (min-width: 1200px) {
+    .main .block-container,
+    [data-testid="block-container"],
+    [data-testid="stAppViewBlockContainer"] {
+        max-width: 1320px;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+}
+
+/* 900px - 1199px: Flexible desktop/landscape tablet */
+@media (min-width: 900px) and (max-width: 1199px) {
+    .main .block-container,
+    [data-testid="block-container"],
+    [data-testid="stAppViewBlockContainer"] {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+}
+
+/* 641px - 899px: Tablet (roughly two-up metrics) */
+@media (min-width: 641px) and (max-width: 899px) {
+    .main .block-container,
+    [data-testid="block-container"],
+    [data-testid="stAppViewBlockContainer"] {
+        padding-left: 1.25rem !important;
+        padding-right: 1.25rem !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] [data-testid="stMetric"]) {
+        flex-wrap: wrap !important;
+        gap: 0.75rem !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] [data-testid="stMetric"]) > div[data-testid="column"] {
+        flex: 1 1 calc(50% - 0.75rem) !important;
+        min-width: calc(50% - 0.75rem) !important;
+        max-width: 100% !important;
+    }
+}
+
+/* <= 640px: Mobile (single-column metrics, full-width actions, reduced padding) */
+@media (max-width: 640px) {
+    .main .block-container,
+    [data-testid="block-container"],
+    [data-testid="stAppViewBlockContainer"] {
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+        padding-top: 1rem !important;
+        padding-bottom: 2rem !important;
+    }
+
+    /* Single-column metrics on mobile */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] [data-testid="stMetric"]) {
+        flex-wrap: wrap !important;
+        gap: 0.5rem !important;
+    }
+
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] [data-testid="stMetric"]) > div[data-testid="column"] {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* Full-width primary controls and buttons on mobile */
+    [data-testid="stButton"] > button,
+    [data-testid="stFormSubmitButton"] > button {
+        width: 100% !important;
+    }
+
+    /* Stack column blocks on mobile */
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap !important;
+    }
+
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+}

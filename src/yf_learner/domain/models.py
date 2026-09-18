@@ -110,7 +110,15 @@ class HistoryResult:
 
 @dataclass(frozen=True, slots=True)
 class FundamentalsResult:
-    """Curated company and valuation fields."""
+    """Curated company and valuation fields.
+
+    Invariant:
+        dividend_yield is represented as a canonical fractional ratio
+        (e.g., 0.0032 for 0.32%, 0.025 for 2.5%). Raw Yahoo/yfinance
+        info["dividendYield"] returns percentage points and is divided
+        by 100 at normalization. Missing, NaN, or non-numeric values
+        normalize to None.
+    """
 
     symbol: str
     name: str | None = None
