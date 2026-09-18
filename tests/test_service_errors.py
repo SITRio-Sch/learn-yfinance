@@ -6,6 +6,7 @@ import pytest
 
 from tests.fakes import FakeMarketDataProvider
 from yf_learner.domain.errors import ProblemKind
+from yf_learner.providers.errors import ProviderFailureKind, ProviderUpstreamError
 from yf_learner.services.market_data import MarketDataService, map_exception_to_problem
 from yf_learner.services.request_gate import RequestGate
 
@@ -80,3 +81,46 @@ def test_service_returns_data_result_failures():
     assert res_503.problem is not None
     assert res_503.problem.kind == ProblemKind.UPSTREAM_UNAVAILABLE
     assert res_503.problem.message == "Yahoo Finance is temporarily unavailable."
+
+
+@pytest.mark.parametrize(
+    ("kind", "problem_kind", "message"),
+    [
+        (
+            ProviderFailureKind.RATE_LIMITED,
+            ProblemKind.RATE_LIMITED,
+            "Yahoo Finance rate-limited this app while fetching this data. No fallback data is shown.",
+        ),
+        (
+            ProviderFailureKind.ACCESS_DENIED,
+            ProblemKind.ACCESS_DENIED,
+            "Yahoo Finance rejected this app’s request while fetching this data. This does not mean the ticker lacks this data.",
+        ),
+        (
+            ProviderFailureKind.UNAVAILABLE,
+            ProblemKind.UPSTREAM_UNAVAILABLE,
+            "Yahoo Finance could not be reached successfully for this request. No fallback data is shown.",
+        ),
+        (
+            ProviderFailureKind.BAD_RESPONSE,
+            ProblemKind.BAD_RESPONSE,
+            "Yahoo Finance returned an unexpected response, so this data could not be displayed safely.",
+        ),
+    ],
+)
+def test_typed_provider_failures_map_without_raw_details(kind, problem_kind, message):
+    fake = FakeMarketDataProvider()
+    fake.error_by_method["fundamentals"] = ProviderUpstreamError(kind=kind, operation="fundamentals")
+    service = MarketDataService(
+        fake,
+        gate=RequestGate(min_interval_seconds=0.0, sleep_func=lambda s: None),
+    )
+
+    result = service.fundamentals("AAPL")
+
+    assert result.value is None
+    assert result.problem is not None
+    assert result.problem.kind == problem_kind
+    assert result.problem.message == message
+    assert result.problem.details is None
+    assert "crumb" not in result.problem.message.lower()

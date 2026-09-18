@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import yf_learner.providers.yfinance_provider as provider_mod
+from yf_learner.providers.errors import ProviderFailureKind, ProviderUpstreamError
 from yf_learner.providers.yfinance_provider import YFinanceProvider
 
 
@@ -137,6 +138,79 @@ def test_provider_analyst_methods(monkeypatch):
 
     provider.analyst_data("AAPL", "growth_estimates")
     mock_ticker.get_growth_estimates.assert_called_once()
+
+
+def test_provider_classifies_rate_limit_and_does_not_call_analyst_fallbacks(monkeypatch):
+    mock_ticker_cls = MagicMock()
+    mock_ticker = mock_ticker_cls.return_value
+    mock_ticker.get_recommendations.side_effect = provider_mod.yf.exceptions.YFRateLimitError()
+    monkeypatch.setattr(provider_mod.yf, "Ticker", mock_ticker_cls)
+
+    with pytest.raises(ProviderUpstreamError) as raised:
+        YFinanceProvider().analyst_data("AAPL", "recommendations")
+
+    assert raised.value.kind == ProviderFailureKind.RATE_LIMITED
+    mock_ticker.get_recommendations.assert_called_once()
+    mock_ticker.get_analyst_price_targets.assert_not_called()
+    mock_ticker.get_earnings_estimate.assert_not_called()
+    mock_ticker.get_revenue_estimate.assert_not_called()
+    mock_ticker.get_growth_estimates.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("exception", "expected_kind"),
+    [
+        (RuntimeError("HTTP Error 401: Invalid Crumb"), ProviderFailureKind.ACCESS_DENIED),
+        (RuntimeError("User is unable to access this feature"), ProviderFailureKind.ACCESS_DENIED),
+        (RuntimeError("HTTP Error 403: Forbidden"), ProviderFailureKind.ACCESS_DENIED),
+        (TimeoutError("request timed out"), ProviderFailureKind.UNAVAILABLE),
+        (ConnectionError("connection refused"), ProviderFailureKind.UNAVAILABLE),
+        (RuntimeError("HTTP Error 503: Service Unavailable"), ProviderFailureKind.UNAVAILABLE),
+    ],
+)
+def test_provider_classifies_known_fundamentals_failures(monkeypatch, exception, expected_kind):
+    mock_ticker_cls = MagicMock()
+    mock_ticker_cls.return_value.get_info.side_effect = exception
+    monkeypatch.setattr(provider_mod.yf, "Ticker", mock_ticker_cls)
+
+    with pytest.raises(ProviderUpstreamError) as raised:
+        YFinanceProvider().fundamentals("AAPL")
+
+    assert raised.value.kind == expected_kind
+    assert raised.value.operation == "fundamentals"
+    assert "crumb" not in str(raised.value).lower()
+
+
+def test_provider_rejects_unsupported_successful_shapes(monkeypatch):
+    mock_ticker_cls = MagicMock()
+    mock_ticker = mock_ticker_cls.return_value
+    mock_ticker.get_info.return_value = []
+    monkeypatch.setattr(provider_mod.yf, "Ticker", mock_ticker_cls)
+
+    with pytest.raises(ProviderUpstreamError) as raised:
+        YFinanceProvider().fundamentals("AAPL")
+
+    assert raised.value.kind == ProviderFailureKind.BAD_RESPONSE
+
+
+def test_provider_preserves_empty_supported_responses(monkeypatch):
+    mock_ticker_cls = MagicMock()
+    mock_ticker = mock_ticker_cls.return_value
+    mock_ticker.get_info.return_value = {}
+    mock_ticker.get_recommendations.return_value = type(
+        "EmptyFrame", (), {"empty": True, "columns": (), "index": ()}
+    )()
+    mock_ticker.get_analyst_price_targets.return_value = {}
+    monkeypatch.setattr(provider_mod.yf, "Ticker", mock_ticker_cls)
+
+    fundamentals = YFinanceProvider().fundamentals("AAPL")
+    recommendations = YFinanceProvider().analyst_data("AAPL", "recommendations")
+    targets = YFinanceProvider().analyst_data("AAPL", "price_targets")
+
+    assert fundamentals.info == {}
+    assert recommendations.table is not None
+    assert recommendations.table.columns == ()
+    assert targets.targets_dict == {}
 
 
 def test_provider_news_feed_tabs(monkeypatch):

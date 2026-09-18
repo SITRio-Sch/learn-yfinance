@@ -15,6 +15,8 @@ class ProblemKind(str, Enum):
     INVALID_REQUEST = "invalid_request"
     UNEXPECTED_RESPONSE = "unexpected_response"
     UPSTREAM_UNAVAILABLE = "upstream_unavailable"
+    ACCESS_DENIED = "access_denied"
+    BAD_RESPONSE = "bad_response"
 
 
 STANDARD_PROBLEM_MESSAGES: dict[ProblemKind, str] = {
@@ -24,6 +26,8 @@ STANDARD_PROBLEM_MESSAGES: dict[ProblemKind, str] = {
     ProblemKind.INVALID_REQUEST: "Yahoo Finance could not process that request.",
     ProblemKind.UNEXPECTED_RESPONSE: "Yahoo Finance returned data in a format this lesson does not recognize.",
     ProblemKind.UPSTREAM_UNAVAILABLE: "Yahoo Finance is temporarily unavailable.",
+    ProblemKind.ACCESS_DENIED: "Yahoo Finance rejected this app’s request while fetching this data. This does not mean the ticker lacks this data.",
+    ProblemKind.BAD_RESPONSE: "Yahoo Finance returned an unexpected response, so this data could not be displayed safely.",
 }
 
 

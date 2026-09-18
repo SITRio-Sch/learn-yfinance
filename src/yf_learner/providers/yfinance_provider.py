@@ -6,11 +6,14 @@ This is the only module in the application permitted to import yfinance.
 from __future__ import annotations
 
 import math
+import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
 import yfinance as yf
 
+from yf_learner.providers.errors import ProviderFailureKind, ProviderUpstreamError
 from yf_learner.providers.protocol import MarketDataProvider
 from yf_learner.providers.raw_models import (
     RawAnalystData,
@@ -23,8 +26,9 @@ from yf_learner.providers.raw_models import (
     RawTable,
 )
 
-# Configure network retries once as required by the specification
+# Configure network retries and exception visibility once as required by the specification
 yf.config.network.retries = 2
+yf.config.debug.hide_exceptions = False
 
 
 def _clean_scalar(val: Any) -> Any:
@@ -84,12 +88,102 @@ def _dataframe_to_raw_table(df: Any) -> RawTable:
     return RawTable(columns=columns, index=index, data=tuple(rows))
 
 
+def _extract_http_status(exc: BaseException) -> int | None:
+    """Extract an HTTP status from public exception attributes only."""
+    for obj in (exc, getattr(exc, "response", None)):
+        if obj is None:
+            continue
+        for attr in ("status_code", "code"):
+            code = getattr(obj, attr, None)
+            if isinstance(code, int) and not isinstance(code, bool) and 100 <= code <= 599:
+                return code
+
+    # yfinance commonly surfaces urllib-style errors as ``HTTP Error 401``.
+    match = re.search(r"\bHTTP(?:\s+Error)?\s+(\d{3})\b", str(exc), re.IGNORECASE)
+    if match:
+        code = int(match.group(1))
+        if 400 <= code <= 599:
+            return code
+    return None
+
+
+def _classify_yfinance_exception(exc: Exception) -> ProviderFailureKind | None:
+    """Return a category only for known yfinance/transport failures."""
+    http_status = _extract_http_status(exc)
+    text = str(exc).lower()
+    name = type(exc).__name__.lower()
+    module = type(exc).__module__.lower()
+
+    rate_limit_error = getattr(getattr(yf, "exceptions", None), "YFRateLimitError", None)
+    if rate_limit_error is not None and isinstance(exc, rate_limit_error):
+        return ProviderFailureKind.RATE_LIMITED
+    if http_status == 429 or re.search(r"\btoo many requests\b|\brate[- ]limited\b", text):
+        return ProviderFailureKind.RATE_LIMITED
+
+    if (
+        http_status in (401, 403)
+        or "invalid crumb" in text
+        or "user is unable to access this feature" in text
+        or "unable-to-access-feature" in text
+    ):
+        return ProviderFailureKind.ACCESS_DENIED
+
+    if (
+        isinstance(exc, (TimeoutError, ConnectionError))
+        or (http_status is not None and (http_status == 408 or 500 <= http_status <= 599))
+        or (
+            module.startswith(("yfinance.", "requests.", "urllib3.", "urllib."))
+            and name in {
+                "yfconnectionerror",
+                "yftimeouterror",
+                "timeout",
+                "readtimeout",
+                "connecttimeout",
+                "connectionerror",
+                "newconnectionerror",
+                "maxretryerror",
+            }
+        )
+    ):
+        return ProviderFailureKind.UNAVAILABLE
+
+    if isinstance(exc, ValueError) and type(exc).__name__ == "JSONDecodeError":
+        return ProviderFailureKind.BAD_RESPONSE
+    return None
+
+
+def _call_yahoo(operation: str, call: Any) -> Any:
+    """Call one yfinance operation and expose only typed upstream failures."""
+    try:
+        return call()
+    except ProviderUpstreamError:
+        raise
+    except Exception as exc:
+        kind = _classify_yfinance_exception(exc)
+        if kind is None:
+            raise
+        raise ProviderUpstreamError(kind=kind, operation=operation, http_status=_extract_http_status(exc)) from exc
+
+
+def _require_mapping(value: Any, operation: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ProviderUpstreamError(kind=ProviderFailureKind.BAD_RESPONSE, operation=operation)
+    return value
+
+
+def _require_dataframe_like(value: Any, operation: str) -> Any:
+    if value is None or not hasattr(value, "columns") or not hasattr(value, "index"):
+        raise ProviderUpstreamError(kind=ProviderFailureKind.BAD_RESPONSE, operation=operation)
+    return value
+
+
 class YFinanceProvider(MarketDataProvider):
     """Concrete MarketDataProvider backed by yfinance."""
 
     def __init__(self) -> None:
         # Re-ensure configuration is active
         yf.config.network.retries = 2
+        yf.config.debug.hide_exceptions = False
 
     def search(self, query: str) -> RawSearchResults:
         """Search Yahoo Finance for quotes matching the query."""
@@ -174,11 +268,8 @@ class YFinanceProvider(MarketDataProvider):
     def fundamentals(self, symbol: str) -> RawFundamentalsData:
         """Fetch company fundamentals dictionary for ticker."""
         ticker = yf.Ticker(symbol)
-        info = ticker.get_info()
-        cleaned_info: dict[str, Any] = {}
-        if isinstance(info, dict):
-            for k, v in info.items():
-                cleaned_info[str(k)] = _clean_scalar(v)
+        info = _require_mapping(_call_yahoo("fundamentals", ticker.get_info), "fundamentals")
+        cleaned_info: dict[str, Any] = {str(k): _clean_scalar(v) for k, v in info.items()}
 
         return RawFundamentalsData(
             symbol=symbol,
@@ -223,29 +314,42 @@ class YFinanceProvider(MarketDataProvider):
         targets_dict: dict[str, Any] | None = None
 
         if norm_dataset == "recommendations":
-            df = ticker.get_recommendations()
+            df = _require_dataframe_like(_call_yahoo(f"analyst_data:{dataset}", ticker.get_recommendations), f"analyst_data:{dataset}")
             table = _dataframe_to_raw_table(df)
+
         elif norm_dataset == "price_targets":
-            raw_targets = ticker.get_analyst_price_targets()
-            if isinstance(raw_targets, dict):
+            operation = f"analyst_data:{dataset}"
+            raw_targets = _call_yahoo(operation, ticker.get_analyst_price_targets)
+            if isinstance(raw_targets, Mapping):
                 targets_dict = {str(k): _clean_scalar(v) for k, v in raw_targets.items()}
             elif hasattr(raw_targets, "to_dict"):
                 try:
                     td = raw_targets.to_dict()
+                    if not isinstance(td, Mapping):
+                        raise TypeError("price target response is not mapping-shaped")
                     targets_dict = {str(k): _clean_scalar(v) for k, v in td.items()}
                 except Exception:
-                    table = _dataframe_to_raw_table(raw_targets)
-            else:
+                    raise ProviderUpstreamError(
+                        kind=ProviderFailureKind.BAD_RESPONSE,
+                        operation=operation,
+                    )
+            elif hasattr(raw_targets, "columns") and hasattr(raw_targets, "index"):
                 table = _dataframe_to_raw_table(raw_targets)
+            else:
+                raise ProviderUpstreamError(kind=ProviderFailureKind.BAD_RESPONSE, operation=operation)
+
         elif norm_dataset == "earnings_estimate":
-            df = ticker.get_earnings_estimate()
+            df = _require_dataframe_like(_call_yahoo(f"analyst_data:{dataset}", ticker.get_earnings_estimate), f"analyst_data:{dataset}")
             table = _dataframe_to_raw_table(df)
+
         elif norm_dataset == "revenue_estimate":
-            df = ticker.get_revenue_estimate()
+            df = _require_dataframe_like(_call_yahoo(f"analyst_data:{dataset}", ticker.get_revenue_estimate), f"analyst_data:{dataset}")
             table = _dataframe_to_raw_table(df)
+
         elif norm_dataset == "growth_estimates":
-            df = ticker.get_growth_estimates()
+            df = _require_dataframe_like(_call_yahoo(f"analyst_data:{dataset}", ticker.get_growth_estimates), f"analyst_data:{dataset}")
             table = _dataframe_to_raw_table(df)
+
         else:
             raise ValueError(f"Unsupported analyst dataset: {dataset}")
 
