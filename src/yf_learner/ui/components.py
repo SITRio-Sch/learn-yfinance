@@ -27,6 +27,7 @@ from yf_learner.ui.cache import (
     cached_quote,
     cached_statement,
 )
+from yf_learner.ui.glossary import get_help
 from yf_learner.ui.layout import (
     build_analyst_table_column_config,
     build_history_column_config,
@@ -122,7 +123,7 @@ open-source `yfinance` Python library queries financial market data from Yahoo F
 
 def render_quote_tab(symbol: str) -> None:
     """Render the Quote tab."""
-    st.subheader("Quote Snapshot")
+    st.subheader("Quote Snapshot", help=get_help("Quote Snapshot"))
     st.markdown(TEACHING_COPY["quote"])
 
     with render_controls_row():
@@ -175,7 +176,7 @@ def render_quote_tab(symbol: str) -> None:
 
 def render_history_tab(symbol: str) -> None:
     """Render the History tab."""
-    st.subheader("Historical Prices & Volume")
+    st.subheader("Historical Prices & Volume", help=get_help("Historical Prices & Volume"))
     st.markdown(TEACHING_COPY["history"])
 
     with render_controls_row():
@@ -184,22 +185,26 @@ def render_history_tab(symbol: str) -> None:
             ["1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"],
             index=0,
             key="history_period_sel",
+            help=get_help("Period"),
         )
         interval = st.selectbox(
             "Interval",
             ["1d", "1wk", "1mo"],
             index=0,
             key="history_interval_sel",
+            help=get_help("Interval"),
         )
         auto_adjust = st.checkbox(
             "Auto-adjust prices",
             value=True,
             key="history_auto_adj_cb",
+            help=get_help("Auto-adjust prices"),
         )
         actions = st.checkbox(
             "Include corporate actions",
             value=False,
             key="history_actions_cb",
+            help=get_help("Corporate Actions"),
         )
         if st.button("Refresh history", key="btn_refresh_history"):
             st.session_state["refresh_history"] = st.session_state.get("refresh_history", 0) + 1
@@ -288,7 +293,7 @@ def render_history_tab(symbol: str) -> None:
 
 def render_fundamentals_tab(symbol: str) -> None:
     """Render the Fundamentals tab."""
-    st.subheader("Company Fundamentals")
+    st.subheader("Company Fundamentals", help=get_help("Company Fundamentals"))
     st.markdown(TEACHING_COPY["fundamentals"])
 
     with render_controls_row():
@@ -309,7 +314,7 @@ def render_fundamentals_tab(symbol: str) -> None:
         st.warning("No fundamental data available for this ticker.")
         return
 
-    st.markdown("#### Profile & Classification")
+    st.markdown("#### Profile & Classification", help=get_help("Profile & Classification"))
     website_val = fund.website
     if website_val and website_val.startswith(("http://", "https://")):
         website_disp = f"[{website_val}]({website_val})"
@@ -329,7 +334,7 @@ def render_fundamentals_tab(symbol: str) -> None:
     ]
     render_profile_grid(profile_items, columns=3)
 
-    st.markdown("#### Valuation & Financial Ratios")
+    st.markdown("#### Valuation & Financial Ratios", help=get_help("Valuation & Financial Ratios"))
     val_metrics = [
         ("Market Cap", format_val(fund.market_cap, prefix="$", format_large=True)),
         ("Enterprise Value", format_val(fund.enterprise_value, prefix="$", format_large=True)),
@@ -353,7 +358,7 @@ def render_fundamentals_tab(symbol: str) -> None:
 
 def render_statements_tab(symbol: str) -> None:
     """Render the Financial Statements tab."""
-    st.subheader("Financial Statements")
+    st.subheader("Financial Statements", help=get_help("Financial Statements"))
     st.markdown(TEACHING_COPY["statements"])
 
     with render_controls_row():
@@ -361,11 +366,13 @@ def render_statements_tab(symbol: str) -> None:
             "Statement",
             ["Income statement", "Balance sheet", "Cash flow"],
             key="stmt_type_sel",
+            help=get_help("Statement"),
         )
         freq_label = st.selectbox(
             "Frequency",
             ["Annual", "Quarterly"],
             key="stmt_freq_sel",
+            help=get_help("Frequency"),
         )
         frequency = "yearly" if freq_label == "Annual" else "quarterly"
         if st.button("Refresh financial statements", key="btn_refresh_statements"):
@@ -416,7 +423,7 @@ def render_statements_tab(symbol: str) -> None:
 
 def render_analyst_tab(symbol: str) -> None:
     """Render the Analyst Data tab."""
-    st.subheader("Analyst Data & Estimates")
+    st.subheader("Analyst Data & Estimates", help=get_help("Analyst Data & Estimates"))
     st.markdown(TEACHING_COPY["analyst"])
 
     dataset_options = {
@@ -433,6 +440,7 @@ def render_analyst_tab(symbol: str) -> None:
             list(dataset_options.keys()),
             format_func=lambda k: dataset_options[k],
             key="analyst_dataset_sel",
+            help=get_help("Dataset"),
         )
         if st.button("Refresh analyst data", key="btn_refresh_analyst"):
             st.session_state["refresh_analyst"] = uuid4().hex
@@ -494,7 +502,7 @@ def render_analyst_tab(symbol: str) -> None:
 
 def render_news_tab(symbol: str) -> None:
     """Render the News tab."""
-    st.subheader("News & Corporate Releases")
+    st.subheader("News & Corporate Releases", help=get_help("News & Corporate Releases"))
     st.markdown(TEACHING_COPY["news"])
 
     with render_controls_row():
@@ -502,8 +510,16 @@ def render_news_tab(symbol: str) -> None:
             "Feed",
             ["news", "all", "press releases"],
             key="news_feed_sel",
+            help=get_help("News Feed"),
         )
-        count = st.slider("Articles Count", min_value=1, max_value=20, value=8, key="news_count_slider")
+        count = st.slider(
+            "Articles Count",
+            min_value=1,
+            max_value=20,
+            value=8,
+            key="news_count_slider",
+            help=get_help("Articles Count"),
+        )
         if st.button("Refresh news", key="btn_refresh_news"):
             st.session_state["refresh_news"] = st.session_state.get("refresh_news", 0) + 1
 

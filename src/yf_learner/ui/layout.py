@@ -8,6 +8,8 @@ from typing import Any
 
 import streamlit as st
 
+from yf_learner.ui.glossary import get_help
+
 
 @contextmanager
 def render_controls_row(
@@ -51,9 +53,18 @@ def render_metric_grid(
             for idx, (col, item) in enumerate(zip(cols, chunk)):
                 with col:
                     if len(item) == 3 and item[2] is not None:
-                        st.metric(label=item[0], value=item[1], delta=item[2])
+                        st.metric(
+                            label=item[0],
+                            value=item[1],
+                            delta=item[2],
+                            help=get_help(item[0]),
+                        )
                     else:
-                        st.metric(label=item[0], value=item[1])
+                        st.metric(
+                            label=item[0],
+                            value=item[1],
+                            help=get_help(item[0]),
+                        )
 
 
 def render_profile_grid(
@@ -70,22 +81,30 @@ def render_profile_grid(
             cols = st.columns(len(chunk))
             for col, (label, val) in zip(cols, chunk):
                 with col:
-                    st.markdown(f"**{label}:** {val}")
+                    st.markdown(f"**{label}:** {val}", help=get_help(label))
 
 
 def build_history_column_config(actions: bool = False) -> dict[str, Any]:
     """Construct explicit column configuration for the historical prices table."""
     config: dict[str, Any] = {
         "Date": st.column_config.TextColumn("Date", width="medium"),
-        "Open": st.column_config.TextColumn("Open", width="small"),
-        "High": st.column_config.TextColumn("High", width="small"),
-        "Low": st.column_config.TextColumn("Low", width="small"),
-        "Close": st.column_config.TextColumn("Close", width="small"),
-        "Volume": st.column_config.TextColumn("Volume", width="medium"),
+        "Open": st.column_config.TextColumn("Open", width="small", help=get_help("Open")),
+        "High": st.column_config.TextColumn("High", width="small", help=get_help("High")),
+        "Low": st.column_config.TextColumn("Low", width="small", help=get_help("Low")),
+        "Close": st.column_config.TextColumn("Close", width="small", help=get_help("Close")),
+        "Volume": st.column_config.TextColumn("Volume", width="medium", help=get_help("Volume")),
     }
     if actions:
-        config["Dividends"] = st.column_config.TextColumn("Dividends", width="small")
-        config["Stock Splits"] = st.column_config.TextColumn("Stock Splits", width="small")
+        config["Dividends"] = st.column_config.TextColumn(
+            "Dividends",
+            width="small",
+            help=get_help("Dividends"),
+        )
+        config["Stock Splits"] = st.column_config.TextColumn(
+            "Stock Splits",
+            width="small",
+            help=get_help("Stock Splits"),
+        )
     return config
 
 
@@ -101,7 +120,7 @@ def build_statement_column_config(
     config: dict[str, Any] = {
         metric_column_name: st.column_config.TextColumn(
             "Financial Metric",
-            help="Standardized Yahoo Finance accounting item",
+            help=get_help("Financial Metric"),
             width="large",
         ),
     }
@@ -109,6 +128,7 @@ def build_statement_column_config(
         config[col_name] = st.column_config.TextColumn(
             str(col_name),
             width="medium",
+            help=get_help("Reporting Period") if str(col_name) else None,
         )
     return config
 
@@ -122,12 +142,14 @@ def build_analyst_table_column_config(
         item_column_name: st.column_config.TextColumn(
             "Item",
             width="large",
+            help=get_help("Analyst Field"),
         ),
     }
     for col_name in data_columns:
         config[col_name] = st.column_config.TextColumn(
             str(col_name),
             width="medium",
+            help=get_help(col_name) or get_help("Analyst Field"),
         )
     return config
 
