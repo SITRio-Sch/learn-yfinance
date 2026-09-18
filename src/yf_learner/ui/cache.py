@@ -76,13 +76,13 @@ def cached_history(
 def _cached_fundamentals_versioned(
     symbol: str,
     normalization_schema_version: int,
-    token: int = 0,
+    token: str = "default",
 ) -> DataResult[FundamentalsResult]:
     """Internal session-scoped cache for fundamentals, keyed by symbol, schema version, and token."""
     return get_service().fundamentals(symbol)
 
 
-def cached_fundamentals(symbol: str, token: int = 0) -> DataResult[FundamentalsResult]:
+def cached_fundamentals(symbol: str, token: str = "default") -> DataResult[FundamentalsResult]:
     """Cache fundamentals for 1800 seconds with versioned schema cache key."""
     return _cached_fundamentals_versioned(
         symbol=symbol,
@@ -106,7 +106,7 @@ def cached_statement(
 def cached_analyst(
     symbol: str,
     dataset: str,
-    token: int = 0,
+    token: str = "default",
 ) -> DataResult[AnalystResult]:
     """Cache analyst estimates/targets for 900 seconds."""
     return get_service().analyst_data(symbol, dataset)

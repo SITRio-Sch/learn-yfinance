@@ -118,11 +118,11 @@ def test_cached_fundamentals_schema_version_key():
     for param_name in sig.parameters:
         assert not param_name.startswith("_"), f"Parameter {param_name} starts with underscore and would be excluded from cache key"
 
-    # Verify public cached_fundamentals signature remains (symbol, token=0)
+    # The default is a stable session token; explicit refreshes replace it with a UUID.
     public_sig = inspect.signature(cached_fundamentals)
     assert "symbol" in public_sig.parameters
     assert "token" in public_sig.parameters
-    assert public_sig.parameters["token"].default == 0
+    assert public_sig.parameters["token"].default == "default"
 
 
 def test_cached_fundamentals_versioning_and_invalidation():
@@ -165,6 +165,76 @@ def test_cached_fundamentals_versioning_and_invalidation():
     at.session_state["schema_version"] = 9999
     at.run()
     assert fake.call_counts["fundamentals"] == 3
+
+
+def test_failed_fundamentals_refresh_is_cached_without_stale_success():
+    """A failed refresh replaces the visible result and is not retried on the same token."""
+    fake = FakeMarketDataProvider()
+    service = MarketDataService(fake, gate=RequestGate(min_interval_seconds=0.0, sleep_func=lambda s: None))
+    set_service_override(service)
+
+    def fundamentals_runner():
+        import streamlit as st
+        from yf_learner.ui.cache import cached_fundamentals
+
+        token = st.session_state.get("recovery_token", "default")
+        result = cached_fundamentals("RECOVERY_FUNDAMENTALS", token=token)
+        if result.problem is not None:
+            st.error(result.problem.message)
+        elif result.value is not None:
+            st.write(f"name={result.value.name}")
+
+    at = AppTest.from_function(fundamentals_runner).run()
+    assert fake.call_counts["fundamentals"] == 1
+    assert any("name=Apple Inc." in item.value for item in at.markdown)
+
+    fake.error_to_raise = Exception("HTTP 429 Too Many Requests")
+    at.session_state["recovery_token"] = "refresh-1"
+    at.run()
+    assert fake.call_counts["fundamentals"] == 2
+    assert any("limiting requests right now" in item.value for item in at.error)
+    assert not any("name=Apple Inc." in item.value for item in at.markdown)
+
+    at.run()
+    assert fake.call_counts["fundamentals"] == 2
+
+    fake.error_to_raise = None
+    at.session_state["recovery_token"] = "refresh-2"
+    at.run()
+    assert fake.call_counts["fundamentals"] == 3
+    assert any("name=Apple Inc." in item.value for item in at.markdown)
+
+
+def test_failed_analyst_refresh_is_cached_without_stale_success():
+    """Analyst failures follow the same token-scoped recovery behavior as fundamentals."""
+    fake = FakeMarketDataProvider()
+    service = MarketDataService(fake, gate=RequestGate(min_interval_seconds=0.0, sleep_func=lambda s: None))
+    set_service_override(service)
+
+    def analyst_runner():
+        import streamlit as st
+        from yf_learner.ui.cache import cached_analyst
+
+        token = st.session_state.get("analyst_recovery_token", "default")
+        result = cached_analyst("RECOVERY_ANALYST", dataset="recommendations", token=token)
+        if result.problem is not None:
+            st.error(result.problem.message)
+        elif result.value is not None:
+            st.write("analyst-data-loaded")
+
+    at = AppTest.from_function(analyst_runner).run()
+    assert fake.call_counts["analyst_data"] == 1
+    assert any("analyst-data-loaded" in item.value for item in at.markdown)
+
+    fake.error_to_raise = Exception("HTTP 403 Forbidden")
+    at.session_state["analyst_recovery_token"] = "refresh-1"
+    at.run()
+    assert fake.call_counts["analyst_data"] == 2
+    assert any("limiting" not in item.value and "rejected this app" in item.value for item in at.error)
+    assert not any("analyst-data-loaded" in item.value for item in at.markdown)
+
+    at.run()
+    assert fake.call_counts["analyst_data"] == 2
 
 
 def test_cached_fundamentals_dividend_yield_end_to_end():

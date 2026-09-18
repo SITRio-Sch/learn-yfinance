@@ -35,13 +35,15 @@ def init_session_state() -> None:
     for token_key in (
         "refresh_quote",
         "refresh_history",
-        "refresh_fundamentals",
         "refresh_statements",
-        "refresh_analyst",
         "refresh_news",
     ):
         if token_key not in st.session_state:
             st.session_state[token_key] = 0
+
+    for token_key in ("refresh_fundamentals", "refresh_analyst"):
+        if token_key not in st.session_state:
+            st.session_state[token_key] = "default"
 
     if "search_results" not in st.session_state:
         st.session_state["search_results"] = None

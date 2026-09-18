@@ -127,10 +127,12 @@ def format_provenance_markdown(prov: Provenance | None, limitation_key: str | No
     """Render standardized markdown for provenance and limitations."""
     if prov is None:
         source_str = "Yahoo Finance via yfinance"
+        attempt_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         retrieved_str = "Not available"
         as_of_str = "Not available"
     else:
         source_str = prov.source
+        attempt_str = None
         retrieved_str = prov.retrieved_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         if prov.data_as_of is not None:
             if isinstance(prov.data_as_of, datetime):
@@ -140,11 +142,13 @@ def format_provenance_markdown(prov: Provenance | None, limitation_key: str | No
         else:
             as_of_str = "Not available"
 
+    retrieval_line = f"- Retrieval attempt: `{attempt_str}`\n" if attempt_str else ""
     lines = [
         "---",
         (
             "**Provenance:**\n"
             f"- Source: `{source_str}`\n"
+            f"{retrieval_line}"
             f"- Retrieved: `{retrieved_str}`\n"
             f"- Data as of: `{as_of_str}`"
         ),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from uuid import uuid4
 
 import streamlit as st
 
@@ -292,9 +293,9 @@ def render_fundamentals_tab(symbol: str) -> None:
 
     with render_controls_row():
         if st.button("Refresh fundamentals", key="btn_refresh_fundamentals"):
-            st.session_state["refresh_fundamentals"] = st.session_state.get("refresh_fundamentals", 0) + 1
+            st.session_state["refresh_fundamentals"] = uuid4().hex
 
-    token = st.session_state.get("refresh_fundamentals", 0)
+    token = st.session_state.get("refresh_fundamentals", "default")
     with st.spinner("Loading live fundamentals…"):
         result = cached_fundamentals(symbol, token=token)
 
@@ -434,9 +435,9 @@ def render_analyst_tab(symbol: str) -> None:
             key="analyst_dataset_sel",
         )
         if st.button("Refresh analyst data", key="btn_refresh_analyst"):
-            st.session_state["refresh_analyst"] = st.session_state.get("refresh_analyst", 0) + 1
+            st.session_state["refresh_analyst"] = uuid4().hex
 
-    token = st.session_state.get("refresh_analyst", 0)
+    token = st.session_state.get("refresh_analyst", "default")
     with st.spinner("Loading live analyst data…"):
         result = cached_analyst(symbol, dataset=dataset, token=token)
 
