@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yf-learner"
+version = "0.1.0"
+description = "A local educational Streamlit app for learning yfinance"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "streamlit==1.64.0",
+    "yfinance==1.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.0.3",
+    "pytest-socket==0.8.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-socket"

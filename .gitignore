@@ -1,0 +1,46 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# environments
+.venv/
+venv/
+env/
+ENV/
+
+# packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# local work/log/generated artifacts
+work/
+logs/
+artifacts/
+output/
+outputs/
+tmp/
+temp/
+*.log
+
+# local secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# editors/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
