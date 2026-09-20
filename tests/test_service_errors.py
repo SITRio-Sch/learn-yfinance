@@ -124,3 +124,33 @@ def test_typed_provider_failures_map_without_raw_details(kind, problem_kind, mes
     assert result.problem.message == message
     assert result.problem.details is None
     assert "crumb" not in result.problem.message.lower()
+
+
+def test_incidental_text_not_mapped_to_access_denied():
+    """Verify incidental numeric text, crumb keywords, and blocked text never become ACCESS_DENIED."""
+    cases = [
+        ValueError("account 401k retirement plan"),
+        ValueError("error 403 invalid input"),
+        KeyError("crumb"),
+        Exception("unrelated thread blocked on resource"),
+        Exception("processed 503 rows successfully"),
+    ]
+    for exc in cases:
+        problem = map_exception_to_problem(exc)
+        assert problem.kind != ProblemKind.ACCESS_DENIED, f"Exception {exc!r} incorrectly mapped to ACCESS_DENIED"
+
+
+def test_exact_typed_access_denied_maps_correctly():
+    """Verify typed ProviderUpstreamError with ACCESS_DENIED maps to ProblemKind.ACCESS_DENIED with exact message."""
+    typed_error = ProviderUpstreamError(
+        kind=ProviderFailureKind.ACCESS_DENIED,
+        operation="quote",
+        http_status=403,
+    )
+    problem = map_exception_to_problem(typed_error)
+    assert problem.kind == ProblemKind.ACCESS_DENIED
+    assert problem.message == (
+        "Yahoo Finance rejected this app’s request while fetching this data. "
+        "This does not mean the ticker lacks this data."
+    )
+    assert problem.details is None

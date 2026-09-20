@@ -181,6 +181,84 @@ def test_provider_classifies_known_fundamentals_failures(monkeypatch, exception,
     assert "crumb" not in str(raised.value).lower()
 
 
+@pytest.mark.parametrize(
+    "exception",
+    [
+        RuntimeError("Invalid Crumb"),
+        RuntimeError("  invalid \t crumb \n "),
+        RuntimeError("USER IS UNABLE TO ACCESS THIS FEATURE"),
+        RuntimeError("  User  is   unable to access this feature  "),
+        RuntimeError("unable-to-access-feature"),
+        RuntimeError("  UNABLE-TO-ACCESS-FEATURE \n "),
+        RuntimeError("HTTP 401"),
+        RuntimeError("HTTP 403"),
+        type("StructuredStatus", (Exception,), {"status_code": 401})("auth required"),
+        type("StructuredResponseStatus", (Exception,), {"response": type("Resp", (), {"status_code": 403})()})(
+            "forbidden"
+        ),
+    ],
+)
+def test_provider_canonical_access_denied_phrases_and_statuses(monkeypatch, exception):
+    mock_ticker_cls = MagicMock()
+    mock_ticker_cls.return_value.get_info.side_effect = exception
+    monkeypatch.setattr(provider_mod.yf, "Ticker", mock_ticker_cls)
+
+    with pytest.raises(ProviderUpstreamError) as raised:
+        YFinanceProvider().fundamentals("AAPL")
+
+    assert raised.value.kind == ProviderFailureKind.ACCESS_DENIED
+    assert raised.value.operation == "fundamentals"
+    assert "crumb" not in str(raised.value).lower()
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        RuntimeError("diagnostic note mentioned invalid crumb previously"),
+        RuntimeError("not an invalid crumb response"),
+        RuntimeError("embedded unable-to-access-feature phrases in error"),
+        RuntimeError("401 occurred previously"),
+        RuntimeError("403 rows were rejected by validation"),
+    ],
+)
+def test_provider_incidental_text_not_mapped_to_access_denied(monkeypatch, exception):
+    assert provider_mod._classify_yfinance_exception(exception) != ProviderFailureKind.ACCESS_DENIED
+
+    mock_ticker_cls = MagicMock()
+    mock_ticker_cls.return_value.get_info.side_effect = exception
+    monkeypatch.setattr(provider_mod.yf, "Ticker", mock_ticker_cls)
+
+    with pytest.raises(RuntimeError) as raised:
+        YFinanceProvider().fundamentals("AAPL")
+
+    assert raised.value is exception
+
+
+@pytest.mark.parametrize(
+    ("exception", "expected_kind"),
+    [
+        (RuntimeError("HTTP 429"), ProviderFailureKind.RATE_LIMITED),
+        (RuntimeError("HTTP Error 429"), ProviderFailureKind.RATE_LIMITED),
+        (RuntimeError("HTTP 429: Too Many Requests"), ProviderFailureKind.RATE_LIMITED),
+        (RuntimeError("HTTP 500"), ProviderFailureKind.UNAVAILABLE),
+        (RuntimeError("HTTP Error 500: Internal Server Error"), ProviderFailureKind.UNAVAILABLE),
+        (RuntimeError("HTTP 502: Bad Gateway"), ProviderFailureKind.UNAVAILABLE),
+        (RuntimeError("HTTP Error 503: Service Unavailable"), ProviderFailureKind.UNAVAILABLE),
+        (RuntimeError("HTTP 504: Gateway Timeout"), ProviderFailureKind.UNAVAILABLE),
+    ],
+)
+def test_provider_explicit_text_statuses_classification(monkeypatch, exception, expected_kind):
+    mock_ticker_cls = MagicMock()
+    mock_ticker_cls.return_value.get_info.side_effect = exception
+    monkeypatch.setattr(provider_mod.yf, "Ticker", mock_ticker_cls)
+
+    with pytest.raises(ProviderUpstreamError) as raised:
+        YFinanceProvider().fundamentals("AAPL")
+
+    assert raised.value.kind == expected_kind
+    assert raised.value.operation == "fundamentals"
+
+
 def test_provider_rejects_unsupported_successful_shapes(monkeypatch):
     mock_ticker_cls = MagicMock()
     mock_ticker = mock_ticker_cls.return_value

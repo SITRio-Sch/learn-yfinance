@@ -10,6 +10,7 @@ from streamlit.testing.v1 import AppTest
 
 from tests.fakes import FakeMarketDataProvider
 from yf_learner.domain.errors import ProblemKind
+from yf_learner.providers.errors import ProviderFailureKind, ProviderUpstreamError
 from yf_learner.services.market_data import MarketDataService
 from yf_learner.services.request_gate import RequestGate
 from yf_learner.ui.cache import set_service_override
@@ -226,7 +227,10 @@ def test_failed_analyst_refresh_is_cached_without_stale_success():
     assert fake.call_counts["analyst_data"] == 1
     assert any("analyst-data-loaded" in item.value for item in at.markdown)
 
-    fake.error_to_raise = Exception("HTTP 403 Forbidden")
+    fake.error_to_raise = ProviderUpstreamError(
+        kind=ProviderFailureKind.ACCESS_DENIED,
+        operation="analyst_data",
+    )
     at.session_state["analyst_recovery_token"] = "refresh-1"
     at.run()
     assert fake.call_counts["analyst_data"] == 2

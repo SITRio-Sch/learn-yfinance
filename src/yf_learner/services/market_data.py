@@ -73,12 +73,6 @@ def map_exception_to_problem(exc: Exception) -> DataProblem:
     if isinstance(exc, TimeoutError) or "timeout" in msg or "timed out" in msg:
         return DataProblem.create(ProblemKind.TIMEOUT)
 
-    if "401" in msg or "403" in msg or "crumb" in msg or "access denied" in msg or "unauthorized" in msg or "forbidden" in msg:
-        return DataProblem.create(
-            ProblemKind.ACCESS_DENIED,
-            custom_message="Yahoo Finance rejected this app’s request while fetching this data. This does not mean the ticker lacks this data.",
-        )
-
     if "404" in msg or "not found" in msg or "no data found" in msg:
         return DataProblem.create(ProblemKind.MISSING_DATA)
 
