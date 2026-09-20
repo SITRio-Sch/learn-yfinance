@@ -107,6 +107,13 @@ def _extract_http_status(exc: BaseException) -> int | None:
     return None
 
 
+_ACCESS_DENIED_CANONICAL_MESSAGES = frozenset({
+    "invalid crumb",
+    "user is unable to access this feature",
+    "unable-to-access-feature",
+})
+
+
 def _classify_yfinance_exception(exc: Exception) -> ProviderFailureKind | None:
     """Return a category only for known yfinance/transport failures."""
     http_status = _extract_http_status(exc)
@@ -120,11 +127,10 @@ def _classify_yfinance_exception(exc: Exception) -> ProviderFailureKind | None:
     if http_status == 429 or re.search(r"\btoo many requests\b|\brate[- ]limited\b", text):
         return ProviderFailureKind.RATE_LIMITED
 
+    normalized_message = re.sub(r"\s+", " ", str(exc)).strip().casefold()
     if (
         http_status in (401, 403)
-        or "invalid crumb" in text
-        or "user is unable to access this feature" in text
-        or "unable-to-access-feature" in text
+        or normalized_message in _ACCESS_DENIED_CANONICAL_MESSAGES
     ):
         return ProviderFailureKind.ACCESS_DENIED
 
